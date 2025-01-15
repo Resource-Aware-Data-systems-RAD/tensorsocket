@@ -46,6 +46,11 @@ for epoch in range(10):
         f = torch.multiprocessing.reductions.reduce_tensor(data)
         # f = data.untyped_storage()._share_cuda_()
         del f
+        print(
+            torch.cuda.mem_get_info(),
+            torch.cuda.memory_allocated(),
+            torch.cuda.memory_reserved(),
+        )
 
         data.detach()
         labels.detach()
