@@ -218,7 +218,7 @@ class TensorConsumer:
             current_epoch = payload["current_epoch"]
             batch_idx = payload["current_batch_index"]
 
-            batch = self.unpack_fn(payload["data"])
+            # batch = self.unpack_fn(payload["data"])
 
             # if current_epoch != self.epoch:  # TODO: make epoch count flexible
             #     self.epoch = current_epoch
@@ -229,4 +229,4 @@ class TensorConsumer:
                     f"Epoch: {self.epoch}, batch_idx: {batch_idx}, batch count: {self.batch_count}"
                 )
                 self.batch_count += 1
-                return batch_idx, batch
+                return batch_idx, (0, 0)

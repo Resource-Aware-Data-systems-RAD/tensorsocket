@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+import torch
 import zmq
 
 from collections import deque
@@ -47,7 +48,7 @@ class ConsumerProgress:
         """
         # assert id == self.batch_max
         self.id_queue.append(id)
-        self.payload_queue.append(payload)
+        # self.payload_queue.append(payload)
 
     def remove_batch(self, id: int) -> None:
         """Remove the leftmost ID/payload pair. ID must match arg0.
@@ -60,7 +61,7 @@ class ConsumerProgress:
         """
         # assert id == self.batch_count
         self.id_queue.popleft()
-        self.payload_queue.popleft()
+        # self.payload_queue.popleft()
 
     def reset(self):
         """Clear all stored IDs and payloads."""
@@ -123,16 +124,28 @@ def pack(data: tuple, do_cuda: bool) -> tuple:
     return tuple((process_tensor(t, do_cuda) for t in data))
 
 
+# def slice(data: tuple, a: int, b: int) -> tuple:
+#     """Slice multiple tensors"""
+
+#     return tuple((element[a:b] for element in data))
+
+
 def slice(data: tuple, a: int, b: int) -> tuple:
     """Slice multiple tensors"""
 
-    return tuple((element[a:b] for element in data))
+    return data
+
+
+# def collate(batches: list) -> tuple:
+#     """Collate multiple tensors"""
+
+#     return tuple((cat([batch[i] for batch in batches]) for i in range(len(batches[0]))))
 
 
 def collate(batches: list) -> tuple:
     """Collate multiple tensors"""
 
-    return tuple((cat([batch[i] for batch in batches]) for i in range(len(batches[0]))))
+    return batches[0]
 
 
 class TensorProducer:
@@ -373,7 +386,7 @@ class TensorProducer:
 
                 # if buffer full, pop from end
                 if len(self.rb_buffer) > self.rb_max_len:
-                    _ = self.rb_buffer.pop(0)
+                    t = self.rb_buffer.pop(0)
 
                 self.index += 1
 
@@ -437,79 +450,82 @@ class TensorProducer:
         Logs progress every 100 batches.
         """
 
-        data = collate(
-            [
-                x[1]
-                for x in self.rb_buffer[
-                    buffer_index : buffer_index + self.producer_batch_size
-                ]
-            ]
-        )
+        with torch.no_grad():
 
-        data = self.pack_fn(data, True)  # TODO: remove cuda flag
+            # data = collate(
+            #     [
+            #         x[1]
+            #         for x in self.rb_buffer[
+            #             buffer_index : buffer_index + self.producer_batch_size
+            #         ]
+            #     ]
+            # )
+            data = self.rb_buffer[-1][1]
 
-        payload = {}
-        for bs, bmax in (
-            (self.consumers[x].batch_size, self.consumers[x].batch_max)
-            for x in self.consumers
-        ):  # TODO: disconnect from prodbatchsize, at the moment synced
-            # TODO: do this *per consumer*
-            messages = []
-            # if bs == 16:
-            #     print("bs", bs)
-            # consumer_bs = current_batch_index * self.loader_batch_size // bs
-            for i, offset in enumerate(
-                range(
-                    (bmax - current_batch_index) * self.loader_batch_size,
-                    len(data[0]),
-                    bs,
-                )
-            ):  # TODO: swap with offset of consumer
-                if offset + bs > len(data[0]):
-                    break
+            data = self.pack_fn(data, True)  # TODO: remove cuda flag
+
+            payload = {}
+            for bs, bmax in (
+                (self.consumers[x].batch_size, self.consumers[x].batch_max)
+                for x in self.consumers
+            ):  # TODO: disconnect from prodbatchsize, at the moment synced
+                # TODO: do this *per consumer*
+                messages = []
                 # if bs == 16:
-                #     print(
-                #         "payload",
-                #         bmax - current_batch_index,
-                #         i,
-                #         offset,
-                #         offset + bs,
-                #         bmax * self.loader_batch_size / bs + i,
-                #         slice(data, offset, offset + bs)[1][0],
+                #     print("bs", bs)
+                # consumer_bs = current_batch_index * self.loader_batch_size // bs
+                # for i, offset in enumerate(
+                #     range(
+                #         (bmax - current_batch_index) * self.loader_batch_size,
+                #         len(data[0]),
+                #         bs,
                 #     )
+                # ):  # TODO: swap with offset of consumer
+                #     if offset + bs > len(data[0]):
+                #         break
+                #     # if bs == 16:
+                #     #     print(
+                #     #         "payload",
+                #     #         bmax - current_batch_index,
+                #     #         i,
+                #     #         offset,
+                #     #         offset + bs,
+                #     #         bmax * self.loader_batch_size / bs + i,
+                #     #         slice(data, offset, offset + bs)[1][0],
+                #     #     )
                 messages.append(
                     dict(
-                        data=self.pack_fn(slice(data, offset, offset + bs), False),
+                        data=self.pack_fn(slice(data, 0, 0 + bs), False),
                         current_epoch=current_epoch,
-                        current_batch_index=bmax * self.loader_batch_size // bs + i,
+                        current_batch_index=bmax * self.loader_batch_size // bs + 0,
                     )
                 )
                 # print(slice(data, offset, offset + bs)[0].shape, len(data[0]))
 
-            payload[f"{bs}"] = messages
+                payload[f"{bs}"] = messages
 
-        # messages = [
-        #     dict(
-        #         data=self.pack_fn(data),
-        #         current_epoch=current_epoch,
-        #         current_batch_index=current_batch_index,
-        #     )
-        # ]
-        # print(data[0].shape)
+            # messages = [
+            #     dict(
+            #         data=self.pack_fn(data),
+            #         current_epoch=current_epoch,
+            #         current_batch_index=current_batch_index,
+            #     )
+            # ]
+            # print(data[0].shape)
 
-        # payload = {"-1": messages}
+            # payload = {"-1": messages}
 
-        # self.active_payloads.append(payload)
-        # print(payload)
+            # self.active_payloads.append(payload)
+            # print(payload)
 
-        if current_batch_index % 100 == 0:
-            logger.info(
-                f"current_batch_index {current_batch_index}, "
-                f"buffer size: {len(self.rb_buffer)}"
-            )
+            if current_batch_index % 100 == 0:
+                logger.info(
+                    f"current_batch_index {current_batch_index}, "
+                    f"buffer size: {len(self.rb_buffer)}"
+                )
 
-        self.socket.send_pyobj(payload)
-        return payload
+            self.socket.send_pyobj(payload)
+            return payload
 
     def _handle_acks(
         self, expected: list, current_batch_index: int, payload: dict

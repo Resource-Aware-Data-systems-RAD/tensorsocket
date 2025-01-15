@@ -41,5 +41,5 @@ for epoch in range(10):
     #         break
     # # end of epoch
 
-# producer.join()
+producer.join()
 print("finished")
