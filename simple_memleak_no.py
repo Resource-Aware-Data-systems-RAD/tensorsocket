@@ -41,25 +41,27 @@ for epoch in range(10):
         data = data.to(device="cuda")
         labels = labels.to(device="cuda")
 
-        time.sleep(0.001)
-        if not i % 100:
-            pass
+        while True:
+            time.sleep(0.001)
+            if not i % 100:
+                pass
+            # f = torch.multiprocessing.reductions.reduce_tensor(data)
+            a = random.randint(0, 500)
+            f = data[a : a + random.randint(0, 499)].untyped_storage()._share_cuda_()
+            # print(f)
+            print(
+                torch.cuda.mem_get_info(),
+                torch.cuda.memory_allocated(),
+                torch.cuda.memory_reserved(),
+            )
 
-        data.untyped_storage()._share_cuda_()
-        # print(f)
-        print(
-            torch.cuda.mem_get_info(),
-            torch.cuda.memory_allocated(),
-            torch.cuda.memory_reserved(),
-        )
+            # data.detach()
+            # labels.detach()
+            # del data
+            # del labels
 
-        # data.detach()
-        # labels.detach()
-        # del data
-        # del labels
-
-        # # Clear cache and collect garbage
-        # torch.cuda.empty_cache()
-        # gc.collect()
+            # # Clear cache and collect garbage
+            # torch.cuda.empty_cache()
+            # gc.collect()
 
 print("finished")
